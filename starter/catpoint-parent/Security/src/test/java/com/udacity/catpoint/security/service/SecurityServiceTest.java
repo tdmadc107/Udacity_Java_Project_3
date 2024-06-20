@@ -32,6 +32,8 @@ public class SecurityServiceTest {
     Sensor sensorDoor;
     Sensor sensorWindow;
     Sensor sensorMotion;
+    @Mock
+    BufferedImage bufferedImage;
 
     @BeforeEach
     void setUp() {
@@ -55,6 +57,9 @@ public class SecurityServiceTest {
     public void whenAlarmAndSensorBecomesActivated_systemIntoPendingAlarmStatus__setAlarmStatusToAlarm() {
         when(securityService.getArmingStatus()).thenReturn(ArmingStatus.ARMED_AWAY);
         when(securityService.getAlarmStatus()).then(invocation -> AlarmStatus.PENDING_ALARM);
+        sensorMotion.setActive(false);
+        sensorDoor.setActive(false);
+        sensorWindow.setActive(false);
         securityService.changeSensorActivationStatus(sensorWindow, true);
         verify(securityRepository, atLeastOnce()).setAlarmStatus(AlarmStatus.ALARM);
     }
@@ -65,31 +70,50 @@ public class SecurityServiceTest {
         when(securityService.getAlarmStatus()).thenReturn(AlarmStatus.PENDING_ALARM);
         sensorWindow.setActive(true);
         securityService.changeSensorActivationStatus(sensorWindow, false);
-        verify(securityRepository).setAlarmStatus(AlarmStatus.NO_ALARM);
+        verify(securityRepository, times(1)).setAlarmStatus(AlarmStatus.NO_ALARM);
+        when(securityService.getAlarmStatus()).thenReturn(AlarmStatus.PENDING_ALARM);
+        sensorDoor.setActive(true);
+        securityService.changeSensorActivationStatus(sensorDoor, false);
+        verify(securityRepository, times(2)).setAlarmStatus(AlarmStatus.NO_ALARM);
+        when(securityService.getAlarmStatus()).thenReturn(AlarmStatus.PENDING_ALARM);
+        sensorMotion.setActive(true);
+        securityService.changeSensorActivationStatus(sensorMotion, false);
+        verify(securityRepository, times(3)).setAlarmStatus(AlarmStatus.NO_ALARM);
     }
 
     // Test case 4
     @Test
     public void whenAlarmActive_changeSensorState() {
-
+        when(securityService.getAlarmStatus()).thenReturn(AlarmStatus.ALARM);
+        sensorWindow.setActive(false);
+        securityService.changeSensorActivationStatus(sensorWindow, true);
+        verify(securityRepository, never()).setAlarmStatus(any());
     }
 
     // Test case 5
     @Test
     public void whenSensorActivated_alreadyActive_changeAlarmState() {
-
+        when(securityService.getAlarmStatus()).thenReturn(AlarmStatus.PENDING_ALARM);
+        sensorDoor.setActive(true);
+        securityService.changeSensorActivationStatus(sensorWindow, true);
+        verify(securityRepository).setAlarmStatus(AlarmStatus.ALARM);
     }
 
     // Test case 6
     @Test
     public void whenSensorDeactivatedAndAlreadyInactive_noChangeAlarmState() {
-
+        securityService.changeSensorActivationStatus(sensorMotion, false);
+        verify(securityRepository, never()).setAlarmStatus(any());
     }
 
     // Test case 7
     @Test
     public void whenCameraImageContainsCatAndSystemArmedHome_setSystemAlarmStatus() {
-
+        // There is no other way to code the logic of this request
+        when(imageService.imageContainsCat(bufferedImage, 50.0f)).then(invocation -> true);
+        when(securityService.getArmingStatus()).thenReturn(ArmingStatus.ARMED_HOME);
+        securityService.processImage(bufferedImage);
+        verify(securityRepository).setAlarmStatus(AlarmStatus.ALARM);
     }
 
     // Test case 8
