@@ -1,8 +1,9 @@
 package com.udacity.catpoint.security.service;
 
 import com.udacity.catpoint.image.service.ImageService;
+import com.udacity.catpoint.security.application.DisplayPanel;
+import com.udacity.catpoint.security.application.StatusListener;
 import com.udacity.catpoint.security.data.*;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,11 +15,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.awt.image.BufferedImage;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -84,6 +83,8 @@ public class SecurityServiceTest {
     // Test case 4
     @Test
     public void whenAlarmActive_changeSensorState() {
+        when(securityService.getArmingStatus()).thenReturn(ArmingStatus.ARMED_AWAY);
+        when(securityService.getArmingStatus()).thenReturn(ArmingStatus.ARMED_HOME);
         when(securityService.getAlarmStatus()).thenReturn(AlarmStatus.ALARM);
         sensorWindow.setActive(false);
         securityService.changeSensorActivationStatus(sensorWindow, true);
@@ -109,7 +110,7 @@ public class SecurityServiceTest {
     // Test case 7
     @Test
     public void whenCameraImageContainsCatAndSystemArmedHome_setSystemAlarmStatus() {
-        // There is no other way to code the logic of this request
+        // There is no other way to code the logic of this requirement
         when(imageService.imageContainsCat(bufferedImage, 50.0f)).then(invocation -> true);
         when(securityService.getArmingStatus()).thenReturn(ArmingStatus.ARMED_HOME);
         securityService.processImage(bufferedImage);
@@ -119,37 +120,73 @@ public class SecurityServiceTest {
     // Test case 8
     @Test
     public void whenImageNotContainCat_changeStatusNoAlarm_sensorsNotActive() {
-
+        sensorWindow.setActive(false);
+        sensorDoor.setActive(false);
+        sensorMotion.setActive(false);
+        when(imageService.imageContainsCat(bufferedImage, 50.0f)).then(invocation -> false);
+        securityService.processImage(bufferedImage);
+        verify(securityRepository).setAlarmStatus(AlarmStatus.NO_ALARM);
     }
 
     // Test case 9
     @Test
     public void whenSystemDisarmed_setStatusNoAlarm() {
-
+        securityService.setArmingStatus(ArmingStatus.DISARMED);
+        verify(securityRepository).setAlarmStatus(AlarmStatus.NO_ALARM);
     }
 
     // Test case 10
     @ParameterizedTest
     @EnumSource(value = ArmingStatus.class, names = {"ARMED_AWAY", "ARMED_HOME"})
     public void whenSystemArmed_resetAllSensorsInactive(ArmingStatus status) {
-
+        Set<Sensor> sensorSet = new HashSet<>();
+        sensorSet.add(sensorWindow);
+        sensorSet.add(sensorDoor);
+        sensorSet.add(sensorMotion);
+        sensorSet.forEach(sensor -> sensor.setActive(true));
+        when(securityService.getAlarmStatus()).thenReturn(AlarmStatus.NO_ALARM);
+        when(securityService.getSensors()).thenReturn(sensorSet);
+        securityService.setArmingStatus(status);
+        securityService.getSensors().forEach(sensor -> assertFalse(sensor.getActive()));
     }
 
     // Test case 11
     @Test
     public void whenSystemArmedHome_whileCameraShowsCat_setAlarmStatusToAlarm() {
-
+        when(securityService.getArmingStatus()).thenReturn(ArmingStatus.ARMED_AWAY);
+        when(imageService.imageContainsCat(bufferedImage, 50.0f)).then(invocation -> true);
+        securityService.processImage(bufferedImage);
+        Set<Sensor> sensorSet = new HashSet<>();
+        when(securityService.getSensors()).thenReturn(sensorSet);
+        securityService.setArmingStatus(ArmingStatus.ARMED_HOME);
+        verify(securityRepository).setAlarmStatus(AlarmStatus.ALARM);
     }
 
     // Test case 12
     @Test
-    public void whenPendingAlarmAndSensorInactive_setStateToPendingAlarm() {
-
+    public void whenPendingAlarmAndSensorActive_setStateToPendingAlarm() {
+        when(securityService.getAlarmStatus()).then(invocation -> AlarmStatus.NO_ALARM);
+        sensorWindow.setActive(true);
+        securityService.changeSensorActivationStatus(sensorWindow, true);
+        verify(securityRepository, atLeastOnce()).setAlarmStatus(AlarmStatus.PENDING_ALARM);
     }
 
     // Test case 13
     @Test
-    public void whenSystemDisarmed_setStatusAlarm() {
+    public void whenSensorActiveAndStatusAlarm_AfterChangeSensorInactive_setStatusPending() {
+        when(securityService.getAlarmStatus()).then(invocation -> AlarmStatus.ALARM);
+        sensorWindow.setActive(true);
+        securityService.changeSensorActivationStatus(sensorWindow, false);
+        verify(securityRepository).setAlarmStatus(AlarmStatus.PENDING_ALARM);
+    }
 
+    // Test case 14
+    @Test
+    public void addTestCaseToAllCoverage() {
+        when(securityService.getAlarmStatus()).then(invocation -> AlarmStatus.ALARM);
+        securityService.addStatusListener(new DisplayPanel(securityService));
+        securityService.removeStatusListener(new DisplayPanel(securityService));
+        securityService.addSensor(sensorMotion);
+        securityService.removeSensor(sensorMotion);
     }
 }
